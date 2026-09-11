@@ -124,13 +124,20 @@ def UriSource.parse : IO UriSource := do
 
 /-- The GitHub URI of the source code of the package. -/
 package_facet srcUri.github (pkg) : String := Job.async do
-  let url ← getGitRemoteUrl pkg.dir "origin"
-  let .some baseUrl := getGithubBaseUrl url
-      | error <|
-        s!"Could not interpret Git remote uri {url} as a Github source repo.\n"
-          ++ "See README on source URIs for more details."
+  let (fromEnv, baseUrl) ← match ← IO.getEnv "DOCGEN_SRC_BASE_URL" with
+    | some baseUrl => pure (true, baseUrl)
+    | none =>
+      let url ← getGitRemoteUrl pkg.dir "origin"
+      let .some baseUrl := getGithubBaseUrl url
+        | error <|
+          s!"Could not interpret Git remote uri {url} as a Github source repo.\n"
+            ++ "See README on source URIs for more details."
+      pure (false, baseUrl)
   let commit ← getProjectCommit pkg.dir
-  logInfo s!"Found git remote for {pkg.baseName} at {baseUrl} @ {commit}"
+  if fromEnv then
+    logInfo s!"Using base URL from DOCGEN_SRC_BASE_URL for {pkg.baseName} at {baseUrl} @ {commit}"
+  else
+    logInfo s!"Found git remote for {pkg.baseName} at {baseUrl} @ {commit}"
   let subdir ← getGitSubDirectory pkg.dir
   return "/".intercalate <| baseUrl :: "blob" :: commit :: filteredPath (subdir / pkg.config.srcDir)
 
